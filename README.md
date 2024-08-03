@@ -1,9 +1,9 @@
 *Dutch below*
 
-=English=
+## English
 
 Webscaper to get receipts from EkoPlaza.
 
-=Nederlands=
+## Nederlands
 
 Webscaper om EkoPlaza bonnen te krijgen.
