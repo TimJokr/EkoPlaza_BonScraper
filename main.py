@@ -1,6 +1,7 @@
 import time
+import locale
+from datetime import datetime, date
 import numpy as np
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver import FirefoxOptions
 from selenium.webdriver.common.by import By
@@ -14,10 +15,11 @@ site_orders = site_base + "/account/orders"
 site_transaction = site_orders + "/history/transaction/"
 
 options = FirefoxOptions()
-options.add_argument("--headless=new")
+# options.add_argument("--headless")
 driver = webdriver.Firefox(options=options)
 driver.implicitly_wait(5)
 wait = WebDriverWait(driver, 5)
+wait_long = WebDriverWait(driver, 30)
 driver.maximize_window()
 print("Driver initiated")
 
@@ -73,51 +75,68 @@ while True:
     try:
         wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".loadmore-btn"))).click()
         print("Clicked 'Meer'")
-    except TimeoutException or StaleElementReferenceException:
+    except (TimeoutException, StaleElementReferenceException):
         print("No 'Meer' button anymore")
         break
 
-transaction_links = driver.find_elements(By.XPATH, "//ul[@class='list-unstyled']/li/a")
-transaction_numbers_retrieved = [transaction_link.get_attribute("href").removeprefix(site_transaction) for transaction_link in transaction_links]
-# transaction_numbers_retrieved = [transaction_link.text for transaction_link in transaction_links]
+transaction_numbers = [elem.get_attribute("href").removeprefix(site_transaction) for elem in driver.find_elements(By.XPATH, "//ul[@class='list-unstyled']/li/a")][:5]
+transaction_dates = [elem.text.split(" - ")[1] for elem in driver.find_elements(By.XPATH, "//ul[@class='list-unstyled']/li/a/div/p[@class='title']")][:5]
+
+locale.setlocale(locale.LC_ALL, 'nl_NL')
+transaction_dates[transaction_dates == "Vandaag"] = date.today().strftime(r'%d %B %Y')
+transaction_dates = [datetime.strptime(date, r'%d %B %Y').strftime(r'%d/%m/%Y') for date in transaction_dates]
 print("Order numbers retrieved")
-# print(order_numbers_retrieved)
 # np.savetxt('order_numbers.txt', order_numbers_retrieved)
 
-
-order_date = list() 
-order_number = list() 
-order_price = list()
-order_location = list()
-order_items_info = list()
 order_items_name = list()
 order_items_price = list()
-order_items_amount = list()
+order_items_amount_unit = list()
+order_items_amount_number = list()
+order_transaction_numbers = list()
 
-for transaction_number in transaction_numbers_retrieved:        # Each order; td doesnt work for single number
+transaction_order_numbers = list() 
+transaction_prices = list()
+transaction_locations = list()
+
+for transaction_number in transaction_numbers:        # Each order; td doesnt work for single number
     driver.get(site_transaction + transaction_number)
 
-    order_items = driver.find_elements(By.XPATH, "//div[@class='cart-list__info']")
-    order_items_info.extend([order_item.text for order_item in order_items])
-    order_items_name.extend([order_item_info.splitlines()[0] for order_item_info in order_items_info])
-    order_items_amount.extend([order_item_info.splitlines()[1].split(')')[1].strip() for order_item_info in order_items_info])
+    try:
+        order_items = wait_long.until(EC.visibility_of_all_elements_located((By.XPATH, "//div[@class='cart-list__info']")))
+    except TimeoutException:    #
+        print("Error")
+        quit()
 
-    number_of_items = len(order_items)
+    order_items_info = [order_item.text for order_item in order_items]
+    order_items_name.extend([elem.splitlines()[0] for elem in order_items_info])
+    order_items_price.extend([elem.splitlines()[1].split('(')[0].strip().replace(',','.') for elem in order_items_info])
+    
+    # order_items_amount_unit.extend([elem.splitlines()[1].split(')')[1].strip() for elem in order_items_info])
+    old_units = list([elem.splitlines()[1].split(')')[1].strip() for elem in order_items_info])
+    word_list = { "Gram": "g", "Liter": "L", "Ml": "ml"}
+    for key, value in word_list.items():
+        old_units = [amount_unit.replace(key, value) for amount_unit in old_units]
+    order_items_amount_unit.extend(old_units)
+    
+    order_items_amount_number.extend([elem.text for elem in driver.find_elements(By.XPATH, "//a[@class='number-btn']")])
+    order_transaction_numbers.extend([transaction_number] * len(order_items))
 
-    order_summary = driver.find_elements(By.XPATH, "//div[@class='order-summary__text']/p")
-    order_date.extend([order_summary[0].text] * number_of_items)
-    order_number.extend([order_summary[1].text] * number_of_items)
-    order_price.extend([order_summary[2].text.split(' - ')[0]] * number_of_items)
-    order_location.extend([order_summary[2].text.split(' - ')[1]]  * number_of_items)
+    transaction_summary = driver.find_elements(By.XPATH, "//div[@class='order-summary__text']/p")
+    transaction_order_numbers.extend([transaction_summary[1].text.removeprefix("Bestelnummer: ")])
+    transaction_prices.extend([transaction_summary[2].text.split(' - ')[0].removeprefix("€").replace(',','.')])
+    transaction_locations.extend([transaction_summary[2].text.split(' - ')[1]])
 
-    time.sleep(10)
-
-    a = pd.DataFrame({'date': order_date, 'number': order_number, 'location': order_location, 'name': order_items_name, 'price': order_items_price, 'amount': order_items_amount})
-    print(a)
-
-    time.sleep(10)
+    print(f"Processed {transaction_number}")
 
 
-time.sleep(100)
+transactions_info = np.array([transaction_numbers, transaction_dates, transaction_order_numbers, transaction_prices, transaction_locations]).transpose()
+orders_info = np.array([order_transaction_numbers, order_items_name, order_items_price, order_items_amount_unit, order_items_amount_number]).transpose()
+
 driver.delete_all_cookies()
 driver.quit()
+
+
+np.savetxt('transs.txt', transactions_info, fmt='%s', delimiter=';', encoding='utf8')
+np.savetxt('orders.txt', orders_info, fmt='%s', delimiter=';', encoding='utf8')
+
+# time.sleep(10)x
