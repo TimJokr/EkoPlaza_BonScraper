@@ -7,86 +7,106 @@ from selenium.webdriver import FirefoxOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 
 import config
 site_base = "https://www.ekoplaza.nl/nl"
 site_orders = site_base + "/account/orders"
 site_transaction = site_orders + "/history/transaction/"
 
-options = FirefoxOptions()
-# options.add_argument("--headless")
-driver = webdriver.Firefox(options=options)
-driver.implicitly_wait(5)
+def initiate_driver():
+    options = FirefoxOptions()
+    # options.add_argument("--headless")
+    driver = webdriver.Firefox(options=options)
+    driver.implicitly_wait(5)
+    driver.maximize_window()
+    print("Driver initiated")
+    return driver
+
+def decline_cookie():
+    try:
+        cookie_decline = wait.until(EC.element_to_be_clickable((By.ID, "CybotCookiebotDialogBodyButtonDecline")))
+        cookie_decline.location_once_scrolled_into_view
+        time.sleep(0.5)
+        cookie_decline.click()
+        print("Cookies denied")
+    except TimeoutException:
+        print("No cookie popup")
+
+def click_log_in():
+    login = driver.find_element(By.ID, "user-dropdown")
+    login.click()
+    print("Login button clicked")
+    time.sleep(3)
+
+def log_in():
+    # Find the fields
+    email_field = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[id*=login-email]")))
+    password_field = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[id^=Wachtwoord-]")))
+    login_submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".btn-success:nth-child(1)")))
+    print("Fields found")
+
+    # Click email field and fill in email
+    email_field.click()
+    email_field.clear()
+    email_field.send_keys(config.email)
+    print("Email filled in")
+
+    # Click password field and fill in password
+    password_field.click()
+    password_field.clear()
+    password_field.send_keys(config.password)
+    print("Password filled in")
+
+    # Click login
+    login_submit.click()
+    print("Login submitted")
+    time.sleep(1)
+
+def to_order_history():
+    driver.get(site_orders)
+    print("Orders opened")
+    time.sleep(1)
+
+def expand_all_transactions():
+    while True:
+        try:
+            wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".loadmore-btn"))).click()
+            print("Clicked 'Meer'")
+        except (TimeoutException, StaleElementReferenceException):
+            print("No 'Meer' button anymore")
+            break
+
+def get_transaction_dates():
+    transaction_dates = [elem.text.split(" - ")[1] for elem in driver.find_elements(By.XPATH, "//ul[@class='list-unstyled']/li/a/div/p[@class='title']")]
+
+    locale.setlocale(locale.LC_ALL, 'nl_NL')
+    transaction_dates[transaction_dates == "Vandaag"] = date.today().strftime(r'%d %B %Y')
+    return [datetime.strptime(date, r'%d %B %Y').strftime(r'%d/%m/%Y') for date in transaction_dates]
+
+driver = initiate_driver()
+
 wait = WebDriverWait(driver, 5)
 wait_long = WebDriverWait(driver, 30)
-driver.maximize_window()
-print("Driver initiated")
 
 driver.get(site_base)
 print("Site opened")
 
-# Decline cookie
-try:
-    cookie_decline = wait.until(EC.element_to_be_clickable((By.ID, "CybotCookiebotDialogBodyButtonDecline")))
-    cookie_decline.location_once_scrolled_into_view
-    time.sleep(0.5)
-    cookie_decline.click()
-    print("Cookies denied")
-except TimeoutException:
-    print("No cookie popup")
+decline_cookie()
 
-# Click "Log in"
-login = driver.find_element(By.ID, "user-dropdown")
-login.click()
-print("Login button clicked")
-time.sleep(3)
+click_log_in()
 
-# Find the fields
-email_field = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[id*=login-email]")))
-password_field = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "[id^=Wachtwoord-]")))
-login_submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".btn-success:nth-child(1)")))
-print("Fields found")
+log_in()
 
-# Click email field and fill in email
-email_field.click()
-email_field.clear()
-email_field.send_keys(config.email)
-print("Email filled in")
+to_order_history()
 
-# Click password field and fill in password
-password_field.click()
-password_field.clear()
-password_field.send_keys(config.password)
-print("Password filled in")
+expand_all_transactions()
 
-# Click login
-login_submit.click()
-print("Login submitted")
-time.sleep(1)
-
-# Go to the order history
-driver.get(site_orders)
-print("Orders opened")
-time.sleep(1)
-
-# Expand all transactions
-while True:
-    try:
-        wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".loadmore-btn"))).click()
-        print("Clicked 'Meer'")
-    except (TimeoutException, StaleElementReferenceException):
-        print("No 'Meer' button anymore")
-        break
 
 transaction_numbers = [elem.get_attribute("href").removeprefix(site_transaction) for elem in driver.find_elements(By.XPATH, "//ul[@class='list-unstyled']/li/a")][:5]
-transaction_dates = [elem.text.split(" - ")[1] for elem in driver.find_elements(By.XPATH, "//ul[@class='list-unstyled']/li/a/div/p[@class='title']")][:5]
+transaction_dates = get_transaction_dates()[:5]
 
-locale.setlocale(locale.LC_ALL, 'nl_NL')
-transaction_dates[transaction_dates == "Vandaag"] = date.today().strftime(r'%d %B %Y')
-transaction_dates = [datetime.strptime(date, r'%d %B %Y').strftime(r'%d/%m/%Y') for date in transaction_dates]
 print("Order numbers retrieved")
-# np.savetxt('order_numbers.txt', order_numbers_retrieved)
 
 order_items_name = list()
 order_items_price = list()
@@ -110,14 +130,15 @@ for transaction_number in transaction_numbers:        # Each order; td doesnt wo
     order_items_info = [order_item.text for order_item in order_items]
     order_items_name.extend([elem.splitlines()[0] for elem in order_items_info])
     order_items_price.extend([elem.splitlines()[1].split('(')[0].strip().replace(',','.') for elem in order_items_info])
+
+    order_items_amount_unit.extend([elem.splitlines()[1].split(')')[1].strip() for elem in order_items_info])
+    # old_units = list([elem.splitlines()[1].split(')')[1].strip() for elem in order_items_info])
+    # word_list = { "Gram": "g", "Liter": "L", "Ml": "ml"}
+    # for key, value in word_list.items():
+    #     old_units = [amount_unit.replace(key, value) for amount_unit in old_units]
+    # order_items_amount_unit.extend(old_units)
     
-    # order_items_amount_unit.extend([elem.splitlines()[1].split(')')[1].strip() for elem in order_items_info])
-    old_units = list([elem.splitlines()[1].split(')')[1].strip() for elem in order_items_info])
-    word_list = { "Gram": "g", "Liter": "L", "Ml": "ml"}
-    for key, value in word_list.items():
-        old_units = [amount_unit.replace(key, value) for amount_unit in old_units]
-    order_items_amount_unit.extend(old_units)
-    
+
     order_items_amount_number.extend([elem.text for elem in driver.find_elements(By.XPATH, "//a[@class='number-btn']")])
     order_transaction_numbers.extend([transaction_number] * len(order_items))
 
@@ -128,9 +149,37 @@ for transaction_number in transaction_numbers:        # Each order; td doesnt wo
 
     print(f"Processed {transaction_number}")
 
+print("All transactions processed")
+
+
+
+order_items_amount_unit = ['1 ' if x=='' else x for x in order_items_amount_unit]
+number = [float(b.split(' ')[0]) for b in order_items_amount_unit]
+unit = [c.split(' ')[1] for c in order_items_amount_unit]
+
+
+order_items_amount_number = [float(string) for string in order_items_amount_number]
+# order_items_amount_unit = [float(string) for string in order_items_amount_unit]
+order_items_price = [float(string) for string in order_items_price]
+order_items_amount_unit = [f"{a*b} {c}" for a, b, c in zip(order_items_amount_number, number, unit)]
+unit_list = { "Gram": "g", "Liter": "L", "Ml": "ml"}
+for key, value in unit_list.items():
+    order_items_amount_unit = [amount_unit.replace(key, value) for amount_unit in order_items_amount_unit]
+
+order_items_price = [a*b for a, b in zip(order_items_amount_number, order_items_price)]
+
+transaction_numbers.insert(0, "Transactienummer")
+transaction_dates.insert(0, "Datum")
+transaction_order_numbers.insert(0, "Bestelnummer")
+transaction_prices.insert(0, "Totale prijs")
+transaction_locations.insert(0, "Locatie")
+order_transaction_numbers.insert(0, "Transactienummer")
+order_items_name.insert(0, "Productnaam")
+order_items_price.insert(0, "Prijs")
+order_items_amount_unit.insert(0, "Hoeveelheid")
 
 transactions_info = np.array([transaction_numbers, transaction_dates, transaction_order_numbers, transaction_prices, transaction_locations]).transpose()
-orders_info = np.array([order_transaction_numbers, order_items_name, order_items_price, order_items_amount_unit, order_items_amount_number]).transpose()
+orders_info = np.array([order_transaction_numbers, order_items_name, order_items_price, order_items_amount_unit]).transpose()
 
 driver.delete_all_cookies()
 driver.quit()
