@@ -1,19 +1,71 @@
 #!/usr/bin/env python3
-import time
+from time import sleep
 import locale
-import pathlib
-from datetime import datetime, date
+from pathlib import Path
+from datetime import datetime
 import numpy as np
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 
 import config
 site_base = "https://www.ekoplaza.nl/nl"
 site_orders = site_base + "/account/orders"
 site_transaction = site_orders + "/history/transaction/"
+
+def setup():
+    close = False
+    print("Welcome to the EkoPlaza BonScraper. This is the first time you used this program. Some settings need to be intialized.") # td name
+    
+    with open(Path('config.py'), "x") as f:
+        input_email = input("Enter email used for EkoPlaza (this is stored locally): ")
+        input_password = input("Enter password used for EkoPlaza (this is stored locally): ")
+        f.write(f"email = '{input_email}'\n")
+        f.write(f"password = '{input_password}'\n")
+
+        input_headless = input("Do you want to see what is happening? [Yes/No] (enables headless): ").lower()
+        if input_headless == "yes" or input_headless == "y":
+            f.write("headless = True\n")
+        elif input_headless == "no" or input_headless == "n":
+            f.write("headless = False\n")
+        else:
+            print("Please enter yes or no next time...")
+            close = True
+        
+        if not close:
+            input_driver = input("What driver do you want to use? [Firefox/Chrome/Edge/Safari/Internet Explorer]: ").lower()
+            match input_driver:
+                case "firefox":
+                    f.write("driver_type = 'ff'\n")
+                case "chrome":
+                    f.write("driver_type = 'chr'\n")
+                case "edge":
+                    f.write("driver_type = 'edge'\n")
+                case "safari":
+                    f.write("driver_type = 'saf'\n")
+                case "internet explorer":
+                    f.write("driver_type = 'ie'\n")
+                case _:
+                    print("Please enter a valid option next time...")
+                    close = True
+
+        if not close:
+            input_combine = input("Do you want to combine transactions and orders? [Yes/No] (Combining is recommended, keeping them apart is more SQL like): ").lower()
+            if input_combine == "yes" or input_combine == "y":
+                f.write("combine = True\n")
+            elif input_combine == "no" or input_combine == "n":
+                f.write("combine = False\n")
+            else:
+                print("Please enter yes or no next time...")
+                close = True 
+
+    if close:
+        Path.unlink("config.py")
+        quit()
+    else:
+        print("Setup succesfull")
 
 def initiate_driver():
     match config.driver_type:
@@ -22,6 +74,7 @@ def initiate_driver():
             options = FirefoxOptions()
             if config.headless:
                 options.add_argument("--headless")
+            driver = webdriver.Firefox(options=options)
         case 'chr':
             from selenium.webdriver import ChromeOptions
             options = ChromeOptions()
@@ -59,7 +112,7 @@ def decline_cookie(driver):
     try:
         cookie_decline = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.ID, "CybotCookiebotDialogBodyButtonDecline")))
         cookie_decline.location_once_scrolled_into_view
-        time.sleep(0.5)
+        sleep(0.5)
         cookie_decline.click()
         print("Cookies denied")
     except TimeoutException:
@@ -69,7 +122,6 @@ def click_log_in(driver):
     login = driver.find_element(By.ID, "user-dropdown")
     login.click()
     print("Login button clicked")
-    time.sleep(3)   # td wait until
 
 def log_in(driver):
     wait = WebDriverWait(driver, 5)
@@ -122,8 +174,8 @@ def get_transaction_numbers(driver):
 def get_transaction_dates(driver):
     transaction_dates = [elem.text.split(" - ")[1] for elem in driver.find_elements(By.XPATH, "//ul[@class='list-unstyled']/li/a/div/p[@class='title']")]
 
-    locale.setlocale(locale.LC_ALL, 'nl_NL')
-    transaction_dates[transaction_dates == "Vandaag"] = date.today().strftime(r'%d %B %Y')
+    locale.setlocale(locale.LC_TIME, 'nl_NL')
+    transaction_dates[transaction_dates == "Vandaag"] = datetime.today().strftime(r'%d %B %Y')
     return [datetime.strptime(date, r'%d %B %Y').strftime(r'%d/%m/%Y') for date in transaction_dates]
 
 def get_order_transaction_info(driver, transaction_numbers):
@@ -184,7 +236,7 @@ def procces_order_transactions(items_info: list[str], transaction_summaries: lis
 
     return (items_name, items_price, items_amount_unit, transaction_order_numbers, transaction_prices, transaction_locations)
 
-def save(transactions_info, orders_info, combine = True):
+def save(transactions_info, orders_info, combine):
     if combine:
         (order_rows, order_cols) = orders_info.shape
 
@@ -199,51 +251,9 @@ def save(transactions_info, orders_info, combine = True):
         np.savetxt('trans.csv', transactions_info, fmt='%s', delimiter=';', encoding='utf8')
         np.savetxt('orders.csv', orders_info, fmt='%s', delimiter=';', encoding='utf8')
 
-def setup():
-    close = False
-    print("Welcome to the EkoPlaza BonScraper. This is the first time you used this program. Some settings need to be intialized.") # td name
-    
-    with open(pathlib.Path('configt.py'), "w") as f:
-        input_email = input("Enter email used for EkoPlaza (this is stored locally): ")
-        input_password = input("Enter password used for EkoPlaza (this is stored locally): ")
-        f.write(f"email = '{input_email}'\n")
-        f.write(f"password = '{input_password}'\n")
-
-        input_headless = input("Do you want to see what is happening? [Yes/No] (enables headless): ").lower()
-        if input_headless == "yes" or input_headless == "y":
-            f.write("headless = True\n")
-        elif input_headless == "no" or input_headless == "n":
-            f.write("headless = False\n")
-        else:
-            print("Please enter yes or no next time...")
-            close = True
-        
-        if not close:
-            input_driver = input("What driver do you want to use? [Firefox/Chrome/Edge/Safari/Internet Explorer]: ").lower()
-            match input_driver:
-                case "firefox":
-                    f.write("driver_type = 'ff'")
-                case "chrome":
-                    f.write("driver_type = 'chr'")
-                case "edge":
-                    f.write("driver_type = 'edge'")
-                case "safari":
-                    f.write("driver_type = 'saf'")
-                case "internet explorer":
-                    f.write("driver_type = 'ie'")
-                case _:
-                    print("Please enter a valid option next time...")
-                    close = True                
-
-    if close:
-        pathlib.Path.unlink("configt.py")
-        quit()
-    else:
-        print("Setup succesfull")
-
 def main():
 
-    if not pathlib.Path("configt.py").is_file():
+    if not Path("config.py").is_file():
         setup()
 
     driver = initiate_driver()
@@ -280,7 +290,7 @@ def main():
     transactions_info = np.array([transaction_numbers, transaction_dates, transaction_order_numbers, transaction_prices, transaction_locations]).transpose()
     orders_info = np.array([order_transaction_numbers, items_name, items_price, items_amount_unit, items_amount]).transpose()
 
-    save(transactions_info, orders_info)
+    save(transactions_info, orders_info, config.combine)
 
     print("Script executed succesfully")
 
