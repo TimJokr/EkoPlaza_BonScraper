@@ -2,6 +2,7 @@ import time
 import locale
 from datetime import datetime, date
 import numpy as np
+# from numpy.dtypes import StringDTyes
 from selenium import webdriver
 from selenium.webdriver import FirefoxOptions
 from selenium.webdriver.common.by import By
@@ -61,12 +62,12 @@ def log_in():
     # Click login
     login_submit.click()
     print("Login submitted")
-    time.sleep(1)
+    wait.until(lambda d: d.get_cookie('asppref'))   # Wait for login cookie
+    print("Logged in")
 
 def to_order_history():
     driver.get(site_orders)
     print("Orders opened")
-    time.sleep(1)
 
 def expand_all_transactions():
     first_print = True
@@ -95,45 +96,76 @@ def get_transaction_numbers():
 def get_order_transaction_info():
     first_print = True
 
-    order_items_name = list()
-    order_items_price = list()
-    order_items_amount_unit = list()
-    order_items_amount_number = list()
     order_transaction_numbers = list()
+    items_info = list()
+    items_amount = list()
+    transaction_summaries = list() 
 
-    transaction_order_numbers = list() 
-    transaction_prices = list()
-    transaction_locations = list()
-
-    for transaction_number in transaction_numbers:        # Each order; td doesnt work for single number
+    for transaction_number in transaction_numbers:        # td doesnt work for single number
         driver.get(site_transaction + transaction_number)
 
         try:
-            order_items = wait_long.until(EC.visibility_of_all_elements_located((By.XPATH, "//div[@class='cart-list__info']")))
+            items = wait_long.until(EC.visibility_of_all_elements_located((By.XPATH, "//div[@class='cart-list__info']")))
         except TimeoutException:    #
             print("Error")
             quit()
 
-        order_items_info = [order_item.text for order_item in order_items]
-        order_items_name.extend([elem.splitlines()[0] for elem in order_items_info])
-        order_items_price.extend([elem.splitlines()[1].split('(')[0].strip().replace(',','.') for elem in order_items_info])
-        order_items_amount_unit.extend([elem.splitlines()[1].split(')')[1].strip() for elem in order_items_info])
-
-        order_items_amount_number.extend([elem.text for elem in driver.find_elements(By.XPATH, "//a[@class='number-btn']")])
-        order_transaction_numbers.extend([transaction_number] * len(order_items))
-
-        transaction_summary = driver.find_elements(By.XPATH, "//div[@class='order-summary__text']/p")
-        transaction_order_numbers.extend([transaction_summary[1].text.removeprefix("Bestelnummer: ")])
-        transaction_prices.extend([transaction_summary[2].text.split(' - ')[0].removeprefix("€").replace(',','.')])
-        transaction_locations.extend([transaction_summary[2].text.split(' - ')[1]])
+        items_info.extend([order_item.text for order_item in items])
+        items_amount.extend([elem.text for elem in driver.find_elements(By.XPATH, "//a[@class='number-btn']")])
+        order_transaction_numbers.extend([transaction_number] * len(items))
+        transaction_summaries.extend([driver.find_element(By.XPATH, "//div[@class='order-summary__text']").text])
 
         if first_print:
-            print(f"Processed {transaction_number}", end='')
+            print(f"Retrieved {transaction_number}", end='')
             first_print = False
         else:
             print(f", {transaction_number}", end='')
 
-    return (order_items_name, order_items_price, order_items_amount_unit, order_items_amount_number, order_transaction_numbers, transaction_order_numbers, transaction_prices, transaction_locations)
+    print("\nAll transactions retrieved")
+
+    return (items_info, order_transaction_numbers, items_amount, transaction_summaries)
+
+def procces_order_transactions(items_info: list[str], transaction_summaries: list[str]):
+        
+    items_name = [elem.splitlines()[0] for elem in items_info]
+    items_price = [elem.splitlines()[1].split('(')[0].strip().replace(',','.') for elem in items_info]
+    items_amount_unit = [elem.splitlines()[1].split(')')[1].strip() for elem in items_info]
+
+    unit_list = { "Gram": "g", "Liter": "L", "Ml": "ml"}
+    for key, value in unit_list.items():
+        items_amount_unit = [amount_unit.replace(key, value) for amount_unit in items_amount_unit]
+
+    transaction_order_numbers = [trans_sum.splitlines()[1].removeprefix("Bestelnummer: ") for trans_sum in transaction_summaries]
+    transaction_prices = [trans_sum.splitlines()[2].split(' - ')[0].removeprefix("€").replace(',','.') for trans_sum in transaction_summaries]
+    transaction_locations = [trans_sum.splitlines()[2].split(' - ')[1] for trans_sum in transaction_summaries]
+
+    items_name.insert(0, "Productnaam")
+    items_price.insert(0, "Prijs")
+    items_amount_unit.insert(0, "Hoeveelheid")
+
+    transaction_order_numbers.insert(0, "Bestelnummer")
+    transaction_prices.insert(0, "Totale prijs")
+    transaction_locations.insert(0, "Locatie")
+
+    print("All transactions proccessed")
+
+    return (items_name, items_price, items_amount_unit, transaction_order_numbers, transaction_prices, transaction_locations)
+
+def save(transactions_info, orders_info, combine = True):
+    if combine:
+
+        combined_data = np.empty((orders_info.shape[0], orders_info.shape[1] + transactions_info.shape[1] - 1), dtype=object)
+        combined_data[:, :orders_info.shape[1]] = orders_info
+
+        for i, order_number in enumerate(orders_info[:,0]):
+            combined_data[i, orders_info.shape[1]:] = transactions_info[np.where(transactions_info[:,0] == order_number)][0][1:]
+
+        np.savetxt('trans_orders.csv', combined_data, fmt='%s', delimiter=';', encoding='utf8')
+
+    else:
+        np.savetxt('trans.csv', transactions_info, fmt='%s', delimiter=';', encoding='utf8')
+        np.savetxt('orders.csv', orders_info, fmt='%s', delimiter=';', encoding='utf8')
+
 
 driver = initiate_driver()
 
@@ -153,55 +185,26 @@ to_order_history()
 
 expand_all_transactions()
 
-
 transaction_numbers = get_transaction_numbers()[:5]
 transaction_dates = get_transaction_dates()[:5]
-
 print("Order numbers retrieved")
 
-# (order_items_name, order_items_price, order_items_amount_unit, order_items_amount_number, order_transaction_numbers, transaction_order_numbers, transaction_prices, transaction_locations) = get_order_transaction_info()
-(order_items_name, order_items_price, order_items_amount_unit, order_items_amount_number, order_transaction_numbers, transaction_order_numbers, transaction_prices, transaction_locations) = get_order_transaction_info()
-
-print("\nAll transactions retrived")
+(items_info, order_transaction_numbers, items_amount, transaction_summaries) = get_order_transaction_info()
 
 driver.delete_all_cookies()
 driver.quit()
 
 
-# order_items_amount_unit = ['1 ' if x=='' else x for x in order_items_amount_unit]
-# number = [float(b.split(' ')[0]) for b in order_items_amount_unit]
-# unit = [c.split(' ')[1] for c in order_items_amount_unit]
-
-
-# order_items_amount_number = [float(string) for string in order_items_amount_number]
-# order_items_price = [float(string) for string in order_items_price]
-# order_items_amount_unit = [f"{a*b} {c}" for a, b, c in zip(order_items_amount_number, number, unit)]
-# unit_list = { "Gram": "g", "Liter": "L", "Ml": "ml"}
-# for key, value in unit_list.items():
-#     order_items_amount_unit = [amount_unit.replace(key, value) for amount_unit in order_items_amount_unit]
-
-# order_items_price = [a*b for a, b in zip(order_items_amount_number, order_items_price)]
+(items_name, items_price, items_amount_unit, transaction_order_numbers, transaction_prices, transaction_locations) = procces_order_transactions(items_info, transaction_summaries)
 
 transaction_numbers.insert(0, "Transactienummer")
 transaction_dates.insert(0, "Datum")
-transaction_order_numbers.insert(0, "Bestelnummer")
-transaction_prices.insert(0, "Totale prijs")
-transaction_locations.insert(0, "Locatie")
 order_transaction_numbers.insert(0, "Transactienummer")
-order_items_name.insert(0, "Productnaam")
-order_items_price.insert(0, "Prijs")
-order_items_amount_unit.insert(0, "Hoeveelheid")
-order_items_amount_number.insert(0, "Aantal")
-
-
-
+items_amount.insert(0, "Aantal")
 
 transactions_info = np.array([transaction_numbers, transaction_dates, transaction_order_numbers, transaction_prices, transaction_locations]).transpose()
-orders_info = np.array([order_transaction_numbers, order_items_name, order_items_price, order_items_amount_unit, order_items_amount_number]).transpose()
+orders_info = np.array([order_transaction_numbers, items_name, items_price, items_amount_unit, items_amount]).transpose()
 
-
-
-np.savetxt('transs.csv', transactions_info, fmt='%s', delimiter=';', encoding='utf8')
-np.savetxt('orders.csv', orders_info, fmt='%s', delimiter=';', encoding='utf8')
+save(transactions_info, orders_info)
 
 print("Script executed succesfully")
