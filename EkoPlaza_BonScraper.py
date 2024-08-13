@@ -74,6 +74,7 @@ def initiate_driver():
             options = FirefoxOptions()
             if config.headless:
                 options.add_argument("--headless")
+            options.set_preference('permissions.default.image', 2)
             driver = webdriver.Firefox(options=options)
         case 'chr':
             from selenium.webdriver import ChromeOptions
@@ -81,6 +82,8 @@ def initiate_driver():
             if config.headless:
                 options.add_argument("--headless=new")
             driver = webdriver.Chrome(options=options)
+            driver.execute_cdp_cmd('Network.setBlockedURLs', {"urls": ["*.jpg", "*.png", "*.gif", "*.svg"]})
+            driver.execute_cdp_cmd('Network.enable', {})
         case 'edge':
             from selenium.webdriver import EdgeOptions
             options = EdgeOptions()
