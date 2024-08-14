@@ -15,7 +15,7 @@ pip install selenium
 ```
 
 ### Download this project
-Download the [latest Release](https://github.com/TimJokr/EkoPlaza_BonScraper/releases/latest/download/). This file can be placed anywhere.
+Download the [latest Release](https://github.com/TimJokr/EkoPlaza_BonScraper/releases/latest/). This file can be placed anywhere.
 
 ## Usage
 Click on the adress bar in the folder with the *EkoPlaza_BonScraper.py* file. Type "cmd" and enter. Execute the following line:
