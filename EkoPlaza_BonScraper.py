@@ -40,7 +40,7 @@ def setup():
         f.write(f"email = '{input_email}'\n")
         f.write(f"password = '{input_password}'\n")
 
-        input_headless = input(
+        input_headless: str = input(
             "Do you want to see what is happening? [Yes/No] (enables headless): "
         ).lower()
         if input_headless == "yes" or input_headless == "y":
@@ -52,7 +52,7 @@ def setup():
             close = True
 
         if not close:
-            input_driver = input(
+            input_driver: str = input(
                 "What driver do you want to use? [Firefox/Chrome/Edge/Safari/Internet Explorer]: "
             ).lower()
             match input_driver:
