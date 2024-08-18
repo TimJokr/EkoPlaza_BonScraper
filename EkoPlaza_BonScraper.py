@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
+import configparser
 import locale
 from datetime import datetime
 from pathlib import Path
 from time import sleep
 from typing import Any
 
-import config
 import numpy as np
 from numpy._typing import NDArray
 from selenium import webdriver
@@ -21,119 +21,139 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+import config
+
 site_base = "https://www.ekoplaza.nl/nl"
 site_orders = site_base + "/account/orders"
 site_transaction = site_orders + "/history/transaction/"
 
 
+def setup_input():
+
+    input_email = input("Enter email used for EkoPlaza (this is stored locally): ")
+    input_password = input(
+        "Enter password used for EkoPlaza (this is stored locally): "
+    )
+    input_driver: str = input(
+        "What driver do you want to use? [Firefox/Chrome/Edge/Safari/Internet Explorer]: "
+    ).lower()
+    input_combine = input(
+        "Do you want to combine transactions and orders? [Yes/No] (Combining is recommended, keeping them apart is more SQL like): "
+    ).lower()
+    input_headless: str = input(
+        "Do you want to see what is happening? [Yes/No] (enables headless): "
+    ).lower()
+
+    return (input_email, input_password, input_driver, input_combine, input_headless)
+
+
 def setup():
-    close = False
+
     print(
         "Welcome to the EkoPlaza BonScraper. This is the first time you used this program. Some settings need to be intialized."
     )
 
-    with open(Path("config.py"), "x") as f:
-        input_email = input("Enter email used for EkoPlaza (this is stored locally): ")
-        input_password = input(
-            "Enter password used for EkoPlaza (this is stored locally): "
-        )
-        f.write(f"email = '{input_email}'\n")
-        f.write(f"password = '{input_password}'\n")
+    (conf_email, conf_password, input_driver, input_combine, input_headless) = (
+        setup_input()
+    )
 
-        input_headless: str = input(
-            "Do you want to see what is happening? [Yes/No] (enables headless): "
-        ).lower()
-        if input_headless == "yes" or input_headless == "y":
-            f.write("headless = True\n")
-        elif input_headless == "no" or input_headless == "n":
-            f.write("headless = False\n")
-        else:
-            print("Please enter yes or no next time...")
-            close = True
+    match input_driver:
+        case "firefox":
+            conf_driver = "ff"
+        case "chrome":
+            conf_driver = "chr"
+        case "edge":
+            conf_driver = "edge"
+        case "safari":
+            conf_driver = "saf"
+        case "internet explorer":
+            conf_driver = "ie"
+        case _:
+            print("Input incorrect...")
+            quit()
 
-        if not close:
-            input_driver: str = input(
-                "What driver do you want to use? [Firefox/Chrome/Edge/Safari/Internet Explorer]: "
-            ).lower()
-            match input_driver:
-                case "firefox":
-                    f.write("driver_type = 'ff'\n")
-                case "chrome":
-                    f.write("driver_type = 'chr'\n")
-                case "edge":
-                    f.write("driver_type = 'edge'\n")
-                case "safari":
-                    f.write("driver_type = 'saf'\n")
-                case "internet explorer":
-                    f.write("driver_type = 'ie'\n")
-                case _:
-                    print("Please enter a valid option next time...")
-                    close = True
-
-        if not close:
-            input_combine = input(
-                "Do you want to combine transactions and orders? [Yes/No] (Combining is recommended, keeping them apart is more SQL like): "
-            ).lower()
-            if input_combine == "yes" or input_combine == "y":
-                f.write("combine = True\n")
-            elif input_combine == "no" or input_combine == "n":
-                f.write("combine = False\n")
-            else:
-                print("Please enter yes or no next time...")
-                close = True
-
-    if close:
-        Path.unlink(Path("config.py"))
-        quit()
+    if input_combine == "yes" or input_combine == "y":
+        conf_combine = "True"
+    elif input_combine == "no" or input_combine == "n":
+        conf_combine = "False"
     else:
-        print("Setup succesfull")
+        print("Input incorrect...")
+        quit()
+
+    if input_headless == "yes" or input_headless == "y":
+        conf_headless = "True"
+    elif input_headless == "no" or input_headless == "n":
+        conf_headless = "False"
+    else:
+        print("Input incorrect...")
+        quit()
+
+    config = configparser.ConfigParser()
+
+    config["Personal"] = {"email": conf_email, "password": conf_password}
+    config["Preferences"] = {
+        "driver": conf_driver,
+        "combine": conf_combine,
+        "headless": conf_headless,
+    }
+
+    with open("config.ini", "x") as configfile:
+        config.write(configfile)
+
+    print("Setup succesfull")
 
 
 def initiate_driver():
-    match config.driver_type:
+
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+
+    match config["Preferences"]["driver"]:
         case "ff":
             options = FirefoxOptions()
-            if config.headless:
+            if bool(config["Preferences"]["headless"]):
                 options.add_argument("--headless")
             options.set_preference("permissions.default.image", 2)
             driver = webdriver.Firefox(options=options)
-        case "chr":
 
+        case "chr":
             options = ChromeOptions()
-            if config.headless:
+            if bool(config["Preferences"]["headless"]):
                 options.add_argument("--headless=new")
             driver = webdriver.Chrome(options=options)
             driver.execute_cdp_cmd(
                 "Network.setBlockedURLs", {"urls": ["*.jpg", "*.png", "*.gif", "*.svg"]}
             )
             driver.execute_cdp_cmd("Network.enable", {})
-        case "edge":
 
+        case "edge":
             options = EdgeOptions()
-            if config.headless:
+            if bool(config["Preferences"]["headless"]):
                 options.add_argument("--headless=new")
             driver = webdriver.Edge(options=options)
-        case "saf":
 
+        case "saf":
             options = SafariOptions()
-            if config.headless:
+            if bool(config["Preferences"]["headless"]):
                 print("Safari does not support headless mode")
+
             driver = webdriver.Safari(options=options)
         case "ie":
-
             options = IeOptions()
-            if config.headless:
+            if bool(config["Preferences"]["headless"]):
                 print("Internet Explorer does not support headless mode")
             driver = webdriver.Ie(options=options)
+
         case _:
             print(
-                "Driver is not given or wrong. Please change this in 'config.py' or delete the file."
+                "Driver is not given or wrong. Please change this in 'config.ini' or delete the file."
             )
             quit()
 
     driver.implicitly_wait(5)
     driver.maximize_window()
     print("Driver initiated")
+
     return driver
 
 
@@ -181,7 +201,11 @@ def log_in(
         | webdriver.Ie
     ),
 ):
+
     wait = WebDriverWait(driver, 5)
+
+    config = configparser.ConfigParser()
+    config.read("config.ini")
 
     # Find the fields
     email_field = wait.until(
@@ -198,13 +222,13 @@ def log_in(
     # Click email field and fill in email
     email_field.click()
     email_field.clear()
-    email_field.send_keys(config.email)
+    email_field.send_keys(config["Personal"]["email"])
     print("Email filled in")
 
     # Click password field and fill in password
     password_field.click()
     password_field.clear()
-    password_field.send_keys(config.password)
+    password_field.send_keys(config["Personal"]["password"])
     print("Password filled in")
 
     # Click login
@@ -395,8 +419,11 @@ def procces_order_transactions(items_info: list[str], transaction_summaries: lis
     )
 
 
-def save(transactions_info: NDArray[Any], orders_info: NDArray[Any], combine: bool):
-    if combine:
+def save(transactions_info: NDArray[Any], orders_info: NDArray[Any]):
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+
+    if bool(config["Preferences"]["combine"]):
         (order_rows, order_cols) = orders_info.shape
 
         combined_data = np.empty(
@@ -421,7 +448,7 @@ def save(transactions_info: NDArray[Any], orders_info: NDArray[Any], combine: bo
 
 def main():
 
-    if not Path("config.py").is_file():
+    if not Path("config.ini").is_file():
         setup()
 
     driver = initiate_driver()
@@ -483,7 +510,7 @@ def main():
         ]
     ).transpose()
 
-    save(transactions_info, orders_info, config.combine)
+    save(transactions_info, orders_info)
 
     print("Script executed succesfully")
 
