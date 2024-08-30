@@ -447,8 +447,8 @@ def main():
 
     expand_all_transactions(driver)
 
-    transaction_numbers = get_transaction_numbers(driver, site_transaction)[-7:]
-    transaction_dates = get_transaction_dates(driver)[-7:]
+    transaction_numbers = get_transaction_numbers(driver, site_transaction)
+    transaction_dates = get_transaction_dates(driver)
     print("Order numbers retrieved")
 
     remove_processed_transactions(transaction_numbers, transaction_dates)
