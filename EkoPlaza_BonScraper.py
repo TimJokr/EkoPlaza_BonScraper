@@ -21,6 +21,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+SITE_BASE = "https://www.ekoplaza.nl/nl"
+SITE_ORDERS = SITE_BASE + "/account/orders"
+SITE_TRANSACTIONS = SITE_ORDERS + "/history/transaction/"
+
 
 def setup_input():
 
@@ -188,9 +192,8 @@ def log_in(
 
 def to_order_history(
     driver: webdriver.Firefox | webdriver.Chrome | webdriver.Edge | webdriver.Safari | webdriver.Ie,
-    site_orders,
 ):
-    driver.get(site_orders)
+    driver.get(SITE_ORDERS)
     print("Orders opened")
 
 
@@ -200,7 +203,7 @@ def expand_all_transactions(
     first_print = True
     while True:
         try:
-            WebDriverWait(driver, 5).until(
+            WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, ".loadmore-btn"))
             ).click()
             sleep(3)  # Annoying, but prevents duplicate orders for some reason
@@ -216,10 +219,9 @@ def expand_all_transactions(
 
 def get_transaction_numbers(
     driver: webdriver.Firefox | webdriver.Chrome | webdriver.Edge | webdriver.Safari | webdriver.Ie,
-    site_transaction,
 ):
     return [
-        str(elem.get_attribute("href")).removeprefix(site_transaction)
+        str(elem.get_attribute("href")).removeprefix(SITE_TRANSACTIONS)
         for elem in driver.find_elements(By.XPATH, "//ul[@class='list-unstyled']/li/a")
     ]
 
@@ -253,7 +255,6 @@ def remove_processed_transactions(transaction_numbers: list[str], transaction_da
 def get_order_transaction_info(
     driver: webdriver.Firefox | webdriver.Chrome | webdriver.Edge | webdriver.Safari | webdriver.Ie,
     transaction_numbers: list[str],
-    site_transaction,
 ):
     first_print = True
 
@@ -263,7 +264,7 @@ def get_order_transaction_info(
     transaction_summaries: list[str] = list()
 
     for transaction_number in transaction_numbers:  # td doesnt work for single number
-        driver.get(site_transaction + transaction_number)
+        driver.get(SITE_TRANSACTIONS + transaction_number)
 
         try:
             items = WebDriverWait(driver, 30).until(
@@ -425,16 +426,13 @@ def save(name, combined_data: NDArray[Any]):
 
 
 def main():
-    site_base = "https://www.ekoplaza.nl/nl"
-    site_orders = site_base + "/account/orders"
-    site_transaction = site_orders + "/history/transaction/"
 
     if not Path("config.ini").is_file():
         setup()
 
     driver = initiate_driver()
 
-    driver.get(site_base)
+    driver.get(SITE_BASE)
     print("Site opened")
 
     decline_cookie(driver)
@@ -443,18 +441,18 @@ def main():
 
     log_in(driver)
 
-    to_order_history(driver, site_orders)
+    to_order_history(driver)
 
     expand_all_transactions(driver)
 
-    transaction_numbers = get_transaction_numbers(driver, site_transaction)
+    transaction_numbers = get_transaction_numbers(driver)
     transaction_dates = get_transaction_dates(driver)
     print("Order numbers retrieved")
 
     remove_processed_transactions(transaction_numbers, transaction_dates)
 
     (items_info, order_transaction_numbers, items_amount, transaction_summaries) = get_order_transaction_info(
-        driver, transaction_numbers, site_transaction
+        driver, transaction_numbers
     )
 
     driver.delete_all_cookies()
